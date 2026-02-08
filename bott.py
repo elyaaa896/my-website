@@ -11,7 +11,6 @@ API_TOKEN = '8523485807:AAGku_LElg2d7imUPitL4T_icTXgcUJ5bkA'
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Настройка Google Таблиц
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
 client = gspread.authorize(creds)
@@ -19,7 +18,7 @@ sheet = client.open("moviesbot_base").worksheet("main")
 
 class Form(StatesGroup):
     waiting_for_series = State()
-    waiting_for_custom_status = State()
+    waiting_for_custom_text = State()
     idx = State()
     page = State()
 
@@ -37,9 +36,11 @@ def get_movie_list_text(page=1):
     current_movies = movies[start:start + items_per_page]
     text = f"🎬 МОЙ СПИСОК (Стр. {page}):\n\n"
     for i, m in enumerate(current_movies, start + 1):
-        v = m.get('series', '')
-        # Формат: Название (Серия) — Статус
-        text += f"{i}. {m['name']} ({v}) — {m.get('status', '⏳')}\n"
+        name = m.get('name', '???')
+        series = m.get('series', '')
+        status = m.get('status', '⏳')
+        comment = m.get('comment', '') # Доп. текст
+        text += f"{i}. {name} ({series}) — {status} {comment}\n"
     
     done = sum(1 for m in movies if '✅' in str(m.get('status', '')))
     text += f"\n📊 {done}/{len(movies)}"
@@ -76,7 +77,7 @@ async def select_movie(call: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     for emo in ["✅", "💋", "⏳", "📛", "➖"]:
         builder.button(text=emo, callback_data=f"set_{idx}_{emo}_{page}")
-    builder.button(text="➕ Текст", callback_data=f"custom_{idx}_{page}")
+    builder.button(text="➕ Текст", callback_data=f"txt_{idx}_{page}")
     builder.button(text="📝 Серия", callback_data=f"ser_{idx}_{page}")
     builder.button(text="🗑 Удалить", callback_data=f"del_{idx}_{page}")
     builder.button(text="🔙 Назад", callback_data=f"page_{page}")
@@ -86,30 +87,30 @@ async def select_movie(call: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("ser_"))
 async def ask_series(call: types.CallbackQuery, state: FSMContext):
     _, idx, page = call.data.split("_")
-    await state.update_data(idx=idx, page=page)
+    await state.update_data(row=int(idx) + 2, page=page)
     await state.set_state(Form.waiting_for_series)
-    await call.message.answer("Введите серию (например, 2/3):")
+    await call.message.answer("Введите серию (любой текст):")
     await call.answer()
 
 @dp.message(Form.waiting_for_series)
 async def update_series(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    sheet.update_cell(int(data['idx']) + 2, 3, message.text)
+    sheet.update_cell(data['row'], 3, message.text)
     await state.clear()
     await message.answer(get_movie_list_text(int(data['page'])), reply_markup=get_main_keyboard(int(data['page'])))
 
-@dp.callback_query(F.data.startswith("custom_"))
-async def ask_custom(call: types.CallbackQuery, state: FSMContext):
+@dp.callback_query(F.data.startswith("txt_"))
+async def ask_text(call: types.CallbackQuery, state: FSMContext):
     _, idx, page = call.data.split("_")
-    await state.update_data(idx=idx, page=page)
-    await state.set_state(Form.waiting_for_custom_status)
-    await call.message.answer("Введите свой статус:")
+    await state.update_data(row=int(idx) + 2, page=page)
+    await state.set_state(Form.waiting_for_custom_text)
+    await call.message.answer("Введите дополнительный текст к статусу:")
     await call.answer()
 
-@dp.message(Form.waiting_for_custom_status)
-async def update_custom(message: types.Message, state: FSMContext):
+@dp.message(Form.waiting_for_custom_text)
+async def update_text(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    sheet.update_cell(int(data['idx']) + 2, 2, message.text)
+    sheet.update_cell(data['row'], 4, message.text) # Текст пишется в колонку D
     await state.clear()
     await message.answer(get_movie_list_text(int(data['page'])), reply_markup=get_main_keyboard(int(data['page'])))
 
@@ -128,11 +129,8 @@ async def delete_movie(call: types.CallbackQuery):
 @dp.message(F.text)
 async def add_movie(message: types.Message):
     if not message.text.startswith('/'):
-        sheet.append_row([message.text, "⏳", ""])
+        sheet.append_row([message.text, "⏳", "", ""]) # name, status, series, comment
         await message.answer(get_movie_list_text(1), reply_markup=get_main_keyboard(1))
 
-async def main():
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+async def main(): await dp.start_polling(bot)
+if __name__ == "__main__": asyncio.run(main())
