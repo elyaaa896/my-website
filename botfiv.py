@@ -82,7 +82,7 @@ async def ask_ser(call: types.CallbackQuery, state: FSMContext):
     _, idx, page = call.data.split("_")
     await state.update_data(row=int(idx) + 2, page=page)
     await state.set_state(Form.waiting_for_series)
-    await call.message.answer("Введите серию (любой формат, например: 2/2, Сезон 2 серия 2, 2 сезон 2 серия и т.д.):")
+    await call.message.answer("Введите серию:")
 
 @dp.message(Form.waiting_for_series)
 async def upd_ser(message: types.Message, state: FSMContext):
@@ -96,7 +96,7 @@ async def ask_txt(call: types.CallbackQuery, state: FSMContext):
     _, idx, page = call.data.split("_")
     await state.update_data(row=int(idx) + 2, page=page)
     await state.set_state(Form.waiting_for_custom_text)
-    await call.message.answer("Введите текст (любой текст, например: жду новых серий, выходит 25.12.2024 и т.д.):")
+    await call.message.answer("Введите время выхода:")
 
 @dp.message(Form.waiting_for_custom_text)
 async def upd_txt(message: types.Message, state: FSMContext):
