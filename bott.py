@@ -33,7 +33,7 @@ def get_movie_list_text(page=1):
     items_per_page = 30
     start = (page - 1) * items_per_page
     current_movies = movies[start:start + items_per_page]
-    text = f"🎬 **ОБЩИЙ СПИСОК (Стр. {page}):**\n\n"
+    text = f"🎬 МОЙ СПИСОК (Стр. {page}):\n\n"
     for i, m in enumerate(current_movies, start + 1):
         v = m.get('series', '')
         s_text = f" ({v})" if v else ""
