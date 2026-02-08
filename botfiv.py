@@ -5,23 +5,6 @@ import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# Настройки доступа
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-
-# Проверяем, есть ли переменная окружения (для Render)
-creds_json = os.getenv("GOOGLE_CREDS_JSON")
-
-if creds_json:
-    # Если мы на Render, берем данные из переменной
-    info = json.loads(creds_json)
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
-else:
-    # Если запускаешь на компьютере, ищем файл
-    # У тебя файл называется credentials.json.json, поэтому указываем это имя
-    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json.json", scope)
-
-client = gspread.authorize(creds)
-
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
