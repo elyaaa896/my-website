@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-# ТОКЕН ИЗ ВАШЕГО !botfiv.ру
+# --- ТВОИ ДАННЫЕ ИЗ !botfiv.ру ---
 API_TOKEN = '8344514218:AAFlAbVAc1VdcqPZ9jlTL5DYSXcBAdZlyrI'
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
@@ -25,16 +25,14 @@ class Form(StatesGroup):
 def load_user_movies(user_id):
     try:
         all_r = sheet_u.get_all_records()
-        # Возвращаем список кортежей (номер_строки_в_таблице, данные_фильма)
         return [(i + 2, r) for i, r in enumerate(all_r) if str(r.get('user_id')) == str(user_id)]
-    except Exception as e:
-        print(f"Ошибка: {e}")
+    except:
         return []
 
 def get_movie_list_text(user_id, page=1):
     user_movies = load_user_movies(user_id)
     if not user_movies:
-        return "🎬 Ваш личный список пуст. Просто напишите название фильма."
+        return "🎬 Ваш личный список пуст."
 
     items_per_page = 30
     start = (page - 1) * items_per_page
@@ -46,9 +44,8 @@ def get_movie_list_text(user_id, page=1):
         s_text = f" ({v} )" if v else ""
         text += f"{i}. {m['name']}{s_text} — {m.get('status', '⏳')}\n"
 
-    total = len(user_movies)
     watched = sum(1 for _, m in user_movies if '✅' in str(m.get('status', '')))
-    text += f"\n📊 {watched}/{total}"
+    text += f"\n📊 {watched}/{len(user_movies)}"
     return text
 
 def get_main_keyboard(user_id, page=1):
@@ -59,7 +56,6 @@ def get_main_keyboard(user_id, page=1):
     current = user_movies[start:start+items_per_page]
 
     for i, (row_idx, m) in enumerate(current, 1):
-        # Передаем реальный номер строки в таблице для управления
         builder.button(text=str(i), callback_data=f"select_{row_idx}_{page}")
     
     nav = []
@@ -73,6 +69,7 @@ def get_main_keyboard(user_id, page=1):
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
+    # ПРИВЕТСТВИЕ ИЗ !botfiv.ру
     welcome_text = (
         "👋 Привет! Это твой личный трекер фильмов.\n\n"
         "**Значения статусов:**\n"
@@ -100,7 +97,7 @@ async def select_movie(call: types.CallbackQuery):
     movie_data = all_records[row_idx - 2]
     
     builder = InlineKeyboardBuilder()
-    # Эмодзи из идеального !botfiv.ру
+    # ТВОИ КНОПКИ ИЗ !botfiv.ру
     for emo in ["✅", "▶️", "⏭️", "⏳", "➖"]:
         builder.button(text=emo, callback_data=f"set_{row_idx}_{emo}_{page}")
 
@@ -114,7 +111,7 @@ async def select_movie(call: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("set_"))
 async def set_status(call: types.CallbackQuery):
     _, row_idx, emo, page = call.data.split("_")
-    sheet_u.update_cell(int(row_idx), 3, emo) # Столбец C (status)
+    sheet_u.update_cell(int(row_idx), 3, emo) 
     await call.message.edit_text(get_movie_list_text(call.from_user.id, int(page)),
                                  reply_markup=get_main_keyboard(call.from_user.id, int(page)))
 
@@ -148,7 +145,7 @@ async def ask_series(call: types.CallbackQuery, state: FSMContext):
 @dp.message(Form.waiting_for_series)
 async def process_series(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    sheet_u.update_cell(data['row_idx'], 4, message.text) # Столбец D (series)
+    sheet_u.update_cell(data['row_idx'], 4, message.text)
     await state.clear()
     await message.answer(get_movie_list_text(message.from_user.id, data['page']),
                          reply_markup=get_main_keyboard(message.from_user.id, data['page']))
@@ -168,7 +165,6 @@ async def add_movie(message: types.Message):
                          reply_markup=get_main_keyboard(message.from_user.id, 1))
 
 async def main():
-    print("🚀 Бот (ЛИЧНЫЙ) запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
