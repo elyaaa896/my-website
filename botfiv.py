@@ -7,10 +7,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-# [span_12](start_span)Токен из твоего кода[span_12](end_span)
 API_TOKEN = '8344514218:AAFlAbVAc1VdcqPZ9jlTL5DYSXcBAdZlyrI'
-
-bot = Bot(token=API_TOKEN)
+bot = Bot(token=API_TOKEN) # Прокси удалены
 dp = Dispatcher()
 
 class Form(StatesGroup):
@@ -18,17 +16,14 @@ class Form(StatesGroup):
     waiting_for_custom_status = State()
 
 DATA_FOLDER = "user_data_storage"
-if not os.path.exists(DATA_FOLDER):
-    os.makedirs(DATA_FOLDER)
+if not os.path.exists(DATA_FOLDER): os.makedirs(DATA_FOLDER)
 
-def get_user_file(user_id):
-    return os.path.join(DATA_FOLDER, f"list_{user_id}.json")
+def get_user_file(user_id): return os.path.join(DATA_FOLDER, f"list_{user_id}.json")
 
 def load_movies(user_id):
     path = get_user_file(user_id)
     if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        with open(path, "r", encoding="utf-8") as f: return json.load(f)
     return []
 
 def save_movies(user_id, data):
@@ -38,8 +33,7 @@ def save_movies(user_id, data):
 
 def get_movie_list_text(user_id, page=1):
     movies = load_movies(user_id)
-    if not movies:
-        return "🎬 Ваш личный список пуст. Просто напишите название фильма."
+    if not movies: return "🎬 Ваш личный список пуст."
     items_per_page = 30
     start = (page - 1) * items_per_page
     end = start + items_per_page
@@ -63,19 +57,14 @@ def get_main_keyboard(user_id, page=1):
     nav = []
     if page > 1: nav.append(types.InlineKeyboardButton(text="⬅️ Назад", callback_data=f"page_{page-1}"))
     if end < len(movies): nav.append(types.InlineKeyboardButton(text="Вперед ➡️", callback_data=f"page_{page+1}"))
-    builder.row(*nav)
+    if nav: builder.row(*nav)
     builder.adjust(5)
     return builder.as_markup()
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
-    welcome_text = (
-        "👋 Привет! Это твой личный трекер фильмов.\n\n"
-        "**Значения статусов:**\n"
-        "✅ — просмотрено\n▶️ — пауза\n⏭️ — следующий\n⏳ — ожидание\n➖ — не смотрел\n\n"
-        "Ниже твой список:"
-    )
-    await message.answer(welcome_text, parse_mode="Markdown")
+    welcome_text = "👋 Привет! Это твой личный трекер.\n\nСтатусы:\n✅ — просмотрено\n▶️ — пауза\n⏳ — ожидание\n➖ — не смотрел"
+    await message.answer(welcome_text)
     await message.answer(get_movie_list_text(message.from_user.id, 1),
                          reply_markup=get_main_keyboard(message.from_user.id, 1))
 
@@ -109,55 +98,6 @@ async def set_status(call: types.CallbackQuery):
     save_movies(user_id, movies)
     await call.message.edit_text(get_movie_list_text(user_id, int(page)),
                                  reply_markup=get_main_keyboard(user_id, int(page)))
-
-@dp.callback_query(F.data.startswith("custom_"))
-async def ask_custom(call: types.CallbackQuery, state: FSMContext):
-    _, idx, page = call.data.split("_")
-    await state.update_data(m_idx=int(idx), page=int(page))
-    await state.set_state(Form.waiting_for_custom_status)
-    await call.answer()
-
-@dp.message(Form.waiting_for_custom_status)
-async def process_custom(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    user_id = message.from_user.id
-    movies = load_movies(user_id)
-    m_idx = data['m_idx']
-    current_s = str(movies[m_idx].get('status', '⏳'))
-    emoji_part = current_s[0] if current_s else "⏳"
-    movies[m_idx]['status'] = f"{emoji_part} {message.text}"
-    save_movies(user_id, movies)
-    await state.clear()
-    await message.answer(get_movie_list_text(user_id, data['page']),
-                         reply_markup=get_main_keyboard(user_id, data['page']))
-
-@dp.callback_query(F.data.startswith("del_"))
-async def delete_movie(call: types.CallbackQuery):
-    _, idx, page = call.data.split("_")
-    user_id = call.from_user.id
-    movies = load_movies(user_id)
-    movies.pop(int(idx))
-    save_movies(user_id, movies)
-    await call.message.edit_text(get_movie_list_text(user_id, int(page)),
-                                 reply_markup=get_main_keyboard(user_id, int(page)))
-
-@dp.callback_query(F.data.startswith("ser_"))
-async def ask_series(call: types.CallbackQuery, state: FSMContext):
-    _, idx, page = call.data.split("_")
-    await state.update_data(m_idx=int(idx), page=int(page))
-    await state.set_state(Form.waiting_for_series)
-    await call.answer()
-
-@dp.message(Form.waiting_for_series)
-async def process_series(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    user_id = message.from_user.id
-    movies = load_movies(user_id)
-    movies[data['m_idx']]['series'] = message.text
-    save_movies(user_id, movies)
-    await state.clear()
-    await message.answer(get_movie_list_text(user_id, data['page']),
-                         reply_markup=get_main_keyboard(user_id, data['page']))
 
 @dp.message(F.text)
 async def add_movie(message: types.Message):
