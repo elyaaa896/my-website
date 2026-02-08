@@ -19,14 +19,10 @@ sheet = client.open("moviesbot_base").worksheet("main")
 class Form(StatesGroup):
     waiting_for_series = State()
     waiting_for_custom_text = State()
-    idx = State()
-    page = State()
 
 def load_movies():
-    try:
-        return sheet.get_all_records()
-    except:
-        return []
+    try: return sheet.get_all_records()
+    except: return []
 
 def get_movie_list_text(page=1):
     movies = load_movies()
@@ -36,14 +32,12 @@ def get_movie_list_text(page=1):
     current_movies = movies[start:start + items_per_page]
     text = f"🎬 МОЙ СПИСОК (Стр. {page}):\n\n"
     for i, m in enumerate(current_movies, start + 1):
-        name = m.get('name', '???')
-        series = m.get('series', '')
-        status = m.get('status', '⏳')
-        comment = m.get('comment', '') # Доп. текст
-        text += f"{i}. {name} ({series}) — {status} {comment}\n"
-    
-    done = sum(1 for m in movies if '✅' in str(m.get('status', '')))
-    text += f"\n📊 {done}/{len(movies)}"
+        # Формат: Название (Серия) — Статус Текст
+        s = m.get('series', '')
+        st = m.get('status', '⏳')
+        txt = m.get('comment', '')
+        text += f"{i}. {m.get('name', '???')} ({s}) — {st} {txt}\n"
+    text += f"\n📊 {len(movies)}"
     return text
 
 def get_main_keyboard(page=1):
@@ -51,12 +45,11 @@ def get_main_keyboard(page=1):
     builder = InlineKeyboardBuilder()
     items_per_page = 30
     start = (page - 1) * items_per_page
-    end = start + items_per_page
-    for i in range(start, min(end, len(movies))):
+    for i in range(start, min(start + items_per_page, len(movies))):
         builder.button(text=str(i+1), callback_data=f"select_{i}_{page}")
     nav = []
     if page > 1: nav.append(types.InlineKeyboardButton(text="⬅️ Назад", callback_data=f"page_{page-1}"))
-    if end < len(movies): nav.append(types.InlineKeyboardButton(text="Вперед ➡️", callback_data=f"page_{page+1}"))
+    if start + items_per_page < len(movies): nav.append(types.InlineKeyboardButton(text="Вперед ➡️", callback_data=f"page_{page+1}"))
     builder.row(*nav)
     builder.adjust(5)
     return builder.as_markup()
@@ -72,8 +65,8 @@ async def change_page(call: types.CallbackQuery):
 
 @dp.callback_query(F.data.startswith("select_"))
 async def select_movie(call: types.CallbackQuery):
-    movies = load_movies()
     idx, page = int(call.data.split("_")[1]), int(call.data.split("_")[2])
+    movies = load_movies()
     builder = InlineKeyboardBuilder()
     for emo in ["✅", "💋", "⏳", "📛", "➖"]:
         builder.button(text=emo, callback_data=f"set_{idx}_{emo}_{page}")
@@ -89,13 +82,12 @@ async def ask_series(call: types.CallbackQuery, state: FSMContext):
     _, idx, page = call.data.split("_")
     await state.update_data(row=int(idx) + 2, page=page)
     await state.set_state(Form.waiting_for_series)
-    await call.message.answer("Введите серию (любой текст):")
-    await call.answer()
+    await call.message.answer("Введите серию:")
 
 @dp.message(Form.waiting_for_series)
 async def update_series(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    sheet.update_cell(data['row'], 3, message.text)
+    sheet.update_cell(data['row'], 3, message.text) # Столбец C
     await state.clear()
     await message.answer(get_movie_list_text(int(data['page'])), reply_markup=get_main_keyboard(int(data['page'])))
 
@@ -104,20 +96,19 @@ async def ask_text(call: types.CallbackQuery, state: FSMContext):
     _, idx, page = call.data.split("_")
     await state.update_data(row=int(idx) + 2, page=page)
     await state.set_state(Form.waiting_for_custom_text)
-    await call.message.answer("Введите дополнительный текст к статусу:")
-    await call.answer()
+    await call.message.answer("Введите текст:")
 
 @dp.message(Form.waiting_for_custom_text)
 async def update_text(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    sheet.update_cell(data['row'], 4, message.text) # Текст пишется в колонку D
+    sheet.update_cell(data['row'], 4, message.text) # Столбец D
     await state.clear()
     await message.answer(get_movie_list_text(int(data['page'])), reply_markup=get_main_keyboard(int(data['page'])))
 
 @dp.callback_query(F.data.startswith("set_"))
 async def set_status(call: types.CallbackQuery):
     _, idx, emo, page = call.data.split("_")
-    sheet.update_cell(int(idx) + 2, 2, emo)
+    sheet.update_cell(int(idx) + 2, 2, emo) # Столбец B
     await call.message.edit_text(get_movie_list_text(int(page)), reply_markup=get_main_keyboard(int(page)))
 
 @dp.callback_query(F.data.startswith("del_"))
@@ -126,10 +117,12 @@ async def delete_movie(call: types.CallbackQuery):
     sheet.delete_rows(int(idx) + 2)
     await call.message.edit_text(get_movie_list_text(int(page)), reply_markup=get_main_keyboard(int(page)))
 
+# ЭТА ФУНКЦИЯ БОЛЬШЕ НЕ СРАБОТАЕТ, ЕСЛИ МЫ ЖДЕМ СЕРИЮ ИЛИ ТЕКСТ
 @dp.message(F.text)
-async def add_movie(message: types.Message):
-    if not message.text.startswith('/'):
-        sheet.append_row([message.text, "⏳", "", ""]) # name, status, series, comment
+async def add_movie(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state is None and not message.text.startswith('/'):
+        sheet.append_row([message.text, "⏳", "", ""])
         await message.answer(get_movie_list_text(1), reply_markup=get_main_keyboard(1))
 
 async def main(): await dp.start_polling(bot)
