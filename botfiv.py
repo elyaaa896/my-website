@@ -1,20 +1,20 @@
 import asyncio
+from google.oauth2.service_account import Credentials
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-# --- ТВОИ ДАННЫЕ ИЗ !botfiv.ру ---
+# ТВОЙ ТОКЕН
 API_TOKEN = '8344514218:AAFlAbVAc1VdcqPZ9jlTL5DYSXcBAdZlyrI'
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Настройка Google Таблиц
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+# ИСПРАВЛЕННЫЙ БЛОК ПОДКЛЮЧЕНИЯ
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
 client = gspread.authorize(creds)
 sheet_u = client.open("moviesbot_base").worksheet("users")
 
@@ -26,7 +26,7 @@ def load_user_movies(user_id):
     try:
         all_r = sheet_u.get_all_records()
         return [(i + 2, r) for i, r in enumerate(all_r) if str(r.get('user_id')) == str(user_id)]
-    except:
+    except Exception:
         return []
 
 def get_movie_list_text(user_id, page=1):
@@ -41,11 +41,12 @@ def get_movie_list_text(user_id, page=1):
     text = f"🎬 **МОЙ СПИСОК (Стр. {page}):**\n\n"
     for i, (row_idx, m) in enumerate(current, 1):
         v = m.get('series', '')
-        s_text = f" ({v} )" if v else ""
+        s_text = f" ({v})" if v else ""
         text += f"{i}. {m['name']}{s_text} — {m.get('status', '⏳')}\n"
 
+    total = len(user_movies)
     watched = sum(1 for _, m in user_movies if '✅' in str(m.get('status', '')))
-    text += f"\n📊 {watched}/{len(user_movies)}"
+    text += f"\n📊 {watched}/{total}"
     return text
 
 def get_main_keyboard(user_id, page=1):
@@ -69,7 +70,6 @@ def get_main_keyboard(user_id, page=1):
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
-    # ПРИВЕТСТВИЕ ИЗ !botfiv.ру
     welcome_text = (
         "👋 Привет! Это твой личный трекер фильмов.\n\n"
         "**Значения статусов:**\n"
@@ -84,12 +84,6 @@ async def start_cmd(message: types.Message):
     await message.answer(get_movie_list_text(message.from_user.id, 1),
                          reply_markup=get_main_keyboard(message.from_user.id, 1))
 
-@dp.callback_query(F.data.startswith("page_"))
-async def change_page(call: types.CallbackQuery):
-    page = int(call.data.split("_")[1])
-    await call.message.edit_text(get_movie_list_text(call.from_user.id, page),
-                                 reply_markup=get_main_keyboard(call.from_user.id, page))
-
 @dp.callback_query(F.data.startswith("select_"))
 async def select_movie(call: types.CallbackQuery):
     row_idx, page = int(call.data.split("_")[1]), int(call.data.split("_")[2])
@@ -97,7 +91,6 @@ async def select_movie(call: types.CallbackQuery):
     movie_data = all_records[row_idx - 2]
     
     builder = InlineKeyboardBuilder()
-    # ТВОИ КНОПКИ ИЗ !botfiv.ру
     for emo in ["✅", "▶️", "⏭️", "⏳", "➖"]:
         builder.button(text=emo, callback_data=f"set_{row_idx}_{emo}_{page}")
 
@@ -111,44 +104,9 @@ async def select_movie(call: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("set_"))
 async def set_status(call: types.CallbackQuery):
     _, row_idx, emo, page = call.data.split("_")
-    sheet_u.update_cell(int(row_idx), 3, emo) 
+    sheet_u.update_cell(int(row_idx), 3, emo)
     await call.message.edit_text(get_movie_list_text(call.from_user.id, int(page)),
                                  reply_markup=get_main_keyboard(call.from_user.id, int(page)))
-
-@dp.callback_query(F.data.startswith("custom_"))
-async def ask_custom(call: types.CallbackQuery, state: FSMContext):
-    _, row_idx, page = call.data.split("_")
-    await state.update_data(row_idx=int(row_idx), page=int(page))
-    await state.set_state(Form.waiting_for_custom_status)
-    await call.answer()
-
-@dp.message(Form.waiting_for_custom_status)
-async def process_custom(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    all_records = sheet_u.get_all_records()
-    m_idx = data['row_idx'] - 2
-    current_s = str(all_records[m_idx].get('status', '⏳'))
-    emoji_part = current_s[0] if current_s else "⏳"
-    new_status = f"{emoji_part} {message.text}"
-    sheet_u.update_cell(data['row_idx'], 3, new_status)
-    await state.clear()
-    await message.answer(get_movie_list_text(message.from_user.id, data['page']),
-                         reply_markup=get_main_keyboard(message.from_user.id, data['page']))
-
-@dp.callback_query(F.data.startswith("ser_"))
-async def ask_series(call: types.CallbackQuery, state: FSMContext):
-    _, row_idx, page = call.data.split("_")
-    await state.update_data(row_idx=int(row_idx), page=int(page))
-    await state.set_state(Form.waiting_for_series)
-    await call.answer()
-
-@dp.message(Form.waiting_for_series)
-async def process_series(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    sheet_u.update_cell(data['row_idx'], 4, message.text)
-    await state.clear()
-    await message.answer(get_movie_list_text(message.from_user.id, data['page']),
-                         reply_markup=get_main_keyboard(message.from_user.id, data['page']))
 
 @dp.callback_query(F.data.startswith("del_"))
 async def delete_movie(call: types.CallbackQuery):
@@ -159,10 +117,10 @@ async def delete_movie(call: types.CallbackQuery):
 
 @dp.message(F.text)
 async def add_movie(message: types.Message):
-    user_id = str(message.from_user.id)
-    sheet_u.append_row([user_id, message.text, "⏳", ""])
-    await message.answer(get_movie_list_text(message.from_user.id, 1),
-                         reply_markup=get_main_keyboard(message.from_user.id, 1))
+    if not message.text.startswith('/'):
+        sheet_u.append_row([str(message.from_user.id), message.text, "⏳", ""])
+        await message.answer(get_movie_list_text(message.from_user.id, 1),
+                             reply_markup=get_main_keyboard(message.from_user.id, 1))
 
 async def main():
     await dp.start_polling(bot)
