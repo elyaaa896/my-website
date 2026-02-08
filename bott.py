@@ -7,11 +7,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-# [span_7](start_span)Токен из твоего кода[span_7](end_span)
 API_TOKEN = '8523485807:AAGku_LElg2d7imUPitL4T_icTXgcUJ5bkA'
-
-# [span_8](start_span)Чистый запуск без прокси[span_8](end_span)
-bot = Bot(token=API_TOKEN)
+bot = Bot(token=API_TOKEN) # Прокси удалены
 dp = Dispatcher()
 
 class Form(StatesGroup):
@@ -33,9 +30,8 @@ def save_movies():
 movies = load_movies()
 
 def get_movie_list_text(page=1):
-    if not movies:
-        return "🎬 Список пуст."
-    [span_9](start_span)items_per_page = 30[span_9](end_span)
+    if not movies: return "🎬 Список пуст."
+    items_per_page = 30
     start = (page - 1) * items_per_page
     end = start + items_per_page
     current_movies = movies[start:end]
@@ -57,7 +53,7 @@ def get_main_keyboard(page=1):
     nav = []
     if page > 1: nav.append(types.InlineKeyboardButton(text="⬅️ Назад", callback_data=f"page_{page-1}"))
     if end < len(movies): nav.append(types.InlineKeyboardButton(text="Вперед ➡️", callback_data=f"page_{page+1}"))
-    builder.row(*nav)
+    if nav: builder.row(*nav)
     builder.adjust(5)
     return builder.as_markup()
 
