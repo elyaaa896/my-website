@@ -2,14 +2,8 @@ import asyncio
 import gspread
 import os
 import json
-creds_json = os.getenv("GOOGLE_CREDS_JSON")
-if creds_json:
-    info = json.loads(creds_json)
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
-else:
-    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+from oauth2client.service_account import ServiceAccountCredentials
 
-client = gspread.authorize(creds)
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
