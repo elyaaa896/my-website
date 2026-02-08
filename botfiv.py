@@ -20,6 +20,8 @@ sheet_u = client.open("moviesbot_base").worksheet("users")
 class Form(StatesGroup):
     waiting_for_series = State()
     waiting_for_custom_status = State()
+    idx = State()
+    page = State()
 
 def load_user_movies(user_id):
     try:
@@ -30,61 +32,87 @@ def load_user_movies(user_id):
 
 def get_movie_list_text(user_id, page=1):
     user_movies = load_user_movies(user_id)
-    if not user_movies: return "🎬 Ваш список пуст. Просто напишите название фильма, чтобы добавить его!"
-    start = (page-1)*10
-    end = start + 10
-    text = f"🍿 Твой список (Стр. {page}):\n\n"
-    for i, (idx, m) in enumerate(user_movies[start:end], start=1):
-        ser = f" | {m.get('series')}" if m.get('series') else ""
-        text += f"{i}. {m['name']} — {m['status']}{ser}\n"
+    if not user_movies: return "🎬 Ваш список пуст. Напишите название фильма."
+    items_per_page = 30
+    start = (page - 1) * items_per_page
+    current = user_movies[start:start+items_per_page]
+    text = f"🎬 **ВАШ СПИСОК (Стр. {page}):**\n\n"
+    for i, (orig_idx, m) in enumerate(current, 1):
+        v = m.get('series', '')
+        text += f"{i}. {m['name']} ({v}) — {m.get('status', '⏳')}\n"
     return text
 
 def get_main_keyboard(user_id, page=1):
     user_movies = load_user_movies(user_id)
     builder = InlineKeyboardBuilder()
-    start = (page-1)*10
-    end = start + 10
-    
-    # Кнопки-цифры как в botfiv изначально
-    for i, (idx, m) in enumerate(user_movies[start:end], start=1):
-        builder.button(text=str(i), callback_data=f"uedit_{idx}_{page}")
-    
-    builder.adjust(5)
+    items_per_page = 30
+    start = (page - 1) * items_per_page
+    current = user_movies[start:start+items_per_page]
+    for i, (orig_idx, m) in enumerate(current, 1):
+        builder.button(text=str(i), callback_data=f"uselect_{orig_idx}_{page}")
     nav = []
     if page > 1: nav.append(types.InlineKeyboardButton(text="⬅️", callback_data=f"upage_{page-1}"))
-    if end < len(user_movies): nav.append(types.InlineKeyboardButton(text="➡️", callback_data=f"upage_{page+1}"))
-    if nav: builder.row(*nav)
-    
+    if start + items_per_page < len(user_movies): nav.append(types.InlineKeyboardButton(text="➡️", callback_data=f"upage_{page+1}"))
+    builder.row(*nav)
+    builder.adjust(5)
     return builder.as_markup()
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
-    await message.answer(get_movie_list_text(message.from_user.id), reply_markup=get_main_keyboard(message.from_user.id))
+    await message.answer(get_movie_list_text(message.from_user.id, 1), 
+                         reply_markup=get_main_keyboard(message.from_user.id, 1))
 
 @dp.callback_query(F.data.startswith("upage_"))
 async def change_page(call: types.CallbackQuery):
     page = int(call.data.split("_")[1])
-    await call.message.edit_text(get_movie_list_text(call.from_user.id, page), reply_markup=get_main_keyboard(call.from_user.id, page))
+    await call.message.edit_text(get_movie_list_text(call.from_user.id, page), 
+                                 reply_markup=get_main_keyboard(call.from_user.id, page))
 
-@dp.callback_query(F.data.startswith("uedit_"))
-async def edit_movie(call: types.CallbackQuery):
-    _, idx, page = call.data.split("_")
+@dp.callback_query(F.data.startswith("uselect_"))
+async def select_movie(call: types.CallbackQuery):
+    idx, page = int(call.data.split("_")[1]), int(call.data.split("_")[2])
     all_r = sheet_u.get_all_records()
-    movie = all_r[int(idx)]
-    
     builder = InlineKeyboardBuilder()
-    # 5 смайликов (включая твой новый ⏮️)
-    for emo in ["✅", "▶️", "⏳", "⏭️", "➖"]:
+    for emo in ["✅", "▶️", "⏳", "➖"]:
         builder.button(text=emo, callback_data=f"uset_{idx}_{emo}_{page}")
-    
-    # Кнопки +Текст и Серия
-    builder.button(text="📝 +Текст", callback_data=f"ucust_{idx}_{page}")
-    builder.button(text="🔢 Серия", callback_data=f"useries_{idx}_{page}")
+    builder.button(text="➕ Текст", callback_data=f"ucustom_{idx}_{page}")
+    builder.button(text="📝 Серия", callback_data=f"user_{idx}_{page}")
     builder.button(text="🗑 Удалить", callback_data=f"udel_{idx}_{page}")
     builder.button(text="🔙 Назад", callback_data=f"upage_{page}")
-    
-    builder.adjust(5, 2, 2)
-    await call.message.edit_text(f"Фильм: {movie['name']}", reply_markup=builder.as_markup())
+    builder.adjust(4, 2, 2)
+    await call.message.edit_text(f"Фильм: {all_r[idx]['name']}", reply_markup=builder.as_markup())
+
+@dp.callback_query(F.data.startswith("user_"))
+async def ask_series(call: types.CallbackQuery, state: FSMContext):
+    _, idx, page = call.data.split("_")
+    await state.update_data(idx=idx, page=page)
+    await state.set_state(Form.waiting_for_series)
+    await call.message.answer("Введите серию (например, 2/3):")
+    await call.answer()
+
+@dp.message(Form.waiting_for_series)
+async def update_series(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    sheet_u.update_cell(int(data['idx']) + 2, 4, message.text)
+    await state.clear()
+    await message.answer(get_movie_list_text(message.from_user.id, int(data['page'])), 
+                         reply_markup=get_main_keyboard(message.from_user.id, int(data['page'])))
+
+@dp.callback_query(F.data.startswith("ucustom_"))
+async def ask_custom(call: types.CallbackQuery, state: FSMContext):
+    _, idx, page = call.data.split("_")
+    await state.update_data(idx=idx, page=page)
+    await state.set_state(Form.waiting_for_custom_status)
+    await call.message.answer("Введите свой статус:")
+    await call.answer()
+
+@dp.message(Form.waiting_for_custom_status)
+async def update_custom(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    sheet_u.update_cell(int(data['idx']) + 2, 3, message.text)
+    await state.clear()
+    await message.answer(get_movie_list_text(message.from_user.id, int(data['page'])), 
+                         reply_markup=get_main_keyboard(message.from_user.id, int(data['page'])))
 
 @dp.callback_query(F.data.startswith("uset_"))
 async def set_status(call: types.CallbackQuery):
@@ -93,37 +121,6 @@ async def set_status(call: types.CallbackQuery):
     await call.message.edit_text(get_movie_list_text(call.from_user.id, int(page)), 
                                  reply_markup=get_main_keyboard(call.from_user.id, int(page)))
 
-@dp.callback_query(F.data.startswith("ucust_"))
-async def ask_custom(call: types.CallbackQuery, state: FSMContext):
-    _, idx, page = call.data.split("_")
-    await state.update_data(idx=idx, page=page)
-    await state.set_state(Form.waiting_for_custom_status)
-    await call.message.answer("Введите текст для статуса:")
-
-@dp.message(Form.waiting_for_custom_status)
-async def proc_custom(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    idx = int(data['idx'])
-    curr = sheet_u.cell(idx + 2, 3).value
-    emo = curr[0] if curr else "⏳"
-    sheet_u.update_cell(idx + 2, 3, f"{emo} {message.text}")
-    await state.clear()
-    await message.answer("Статус обновлен!", reply_markup=get_main_keyboard(message.from_user.id, int(data['page'])))
-
-@dp.callback_query(F.data.startswith("useries_"))
-async def ask_ser(call: types.CallbackQuery, state: FSMContext):
-    _, idx, page = call.data.split("_")
-    await state.update_data(idx=idx, page=page)
-    await state.set_state(Form.waiting_for_series)
-    await call.message.answer("Введите номер серии:")
-
-@dp.message(Form.waiting_for_series)
-async def proc_ser(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    sheet_u.update_cell(int(data['idx']) + 2, 4, message.text)
-    await state.clear()
-    await message.answer("Серия сохранена!", reply_markup=get_main_keyboard(message.from_user.id, int(data['page'])))
-
 @dp.callback_query(F.data.startswith("udel_"))
 async def delete_movie(call: types.CallbackQuery):
     _, idx, page = call.data.split("_")
@@ -131,17 +128,15 @@ async def delete_movie(call: types.CallbackQuery):
     await call.message.edit_text(get_movie_list_text(call.from_user.id, int(page)), 
                                  reply_markup=get_main_keyboard(call.from_user.id, int(page)))
 
-@dp.message()
-async def save_by_text(message: types.Message):
-    # Если это просто сообщение (не команда и не ожидание серии), добавляем как фильм
-    state = await dp.storage.get_state(bot, message.from_user.id)
-    if state is None and not message.text.startswith('/'):
+@dp.message(F.text)
+async def add_movie(message: types.Message):
+    if not message.text.startswith('/'):
         sheet_u.append_row([str(message.from_user.id), message.text, "⏳", ""])
-        await message.answer(f"✅ Добавлено в ваш список: {message.text}", 
-                             reply_markup=get_main_keyboard(message.from_user.id))
+        await message.answer(get_movie_list_text(message.from_user.id, 1), 
+                             reply_markup=get_main_keyboard(message.from_user.id, 1))
 
 async def main():
     await dp.start_polling(bot)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())
