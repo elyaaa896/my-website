@@ -1,20 +1,20 @@
 import asyncio
+from google.oauth2.service_account import Credentials
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-# --- ТВОИ ДАННЫЕ ИЗ !bott.ру ---
+# ТВОЙ ТОКЕН
 API_TOKEN = '8523485807:AAGku_LElg2d7imUPitL4T_icTXgcUJ5bkA'
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Настройка Google Таблиц
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+# ИСПРАВЛЕННЫЙ БЛОК ПОДКЛЮЧЕНИЯ (БЕЗ ОШИБКИ JWT)
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
 client = gspread.authorize(creds)
 sheet = client.open("moviesbot_base").worksheet("main")
 
@@ -25,7 +25,7 @@ class Form(StatesGroup):
 def load_movies():
     try:
         return sheet.get_all_records()
-    except:
+    except Exception:
         return []
 
 def get_movie_list_text(page=1):
@@ -79,7 +79,7 @@ async def select_movie(call: types.CallbackQuery):
     movies = load_movies()
     idx, page = int(call.data.split("_")[1]), int(call.data.split("_")[2])
     builder = InlineKeyboardBuilder()
-    # ТВОИ КНОПКИ ИЗ !bott.ру
+    # ТВОИ КНОПКИ
     for emo in ["✅", "💋", "⏳", "📛", "➖"]:
         builder.button(text=emo, callback_data=f"set_{idx}_{emo}_{page}")
     builder.button(text="➕ Текст", callback_data=f"custom_{idx}_{page}")
@@ -92,7 +92,7 @@ async def select_movie(call: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("set_"))
 async def set_status(call: types.CallbackQuery):
     _, idx, emo, page = call.data.split("_")
-    sheet.update_cell(int(idx) + 2, 2, emo) 
+    sheet.update_cell(int(idx) + 2, 2, emo)
     await call.message.edit_text(get_movie_list_text(int(page)), reply_markup=get_main_keyboard(int(page)))
 
 @dp.callback_query(F.data.startswith("custom_"))
@@ -136,8 +136,9 @@ async def delete_movie(call: types.CallbackQuery):
 
 @dp.message(F.text)
 async def add_movie(message: types.Message):
-    sheet.append_row([message.text, "⏳", ""])
-    await message.answer(get_movie_list_text(1), reply_markup=get_main_keyboard(1))
+    if not message.text.startswith('/'):
+        sheet.append_row([message.text, "⏳", ""])
+        await message.answer(get_movie_list_text(1), reply_markup=get_main_keyboard(1))
 
 async def main():
     await dp.start_polling(bot)
