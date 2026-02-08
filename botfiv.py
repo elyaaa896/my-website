@@ -1,20 +1,32 @@
 import asyncio
-from google.oauth2.service_account import Credentials
 import gspread
+import json
+import os
+from oauth2client.service_account import ServiceAccountCredentials
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-# ТВОЙ ТОКЕН
+# ТВОЙ ТОКЕН ИЗ !botfiv.ру
 API_TOKEN = '8344514218:AAFlAbVAc1VdcqPZ9jlTL5DYSXcBAdZlyrI'
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# ИСПРАВЛЕННЫЙ БЛОК ПОДКЛЮЧЕНИЯ
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
+# --- НАДЕЖНОЕ ПОДКЛЮЧЕНИЕ К GOOGLE ---
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+
+def get_creds():
+    # Сначала ищем в переменных окружения Render
+    creds_json = os.environ.get("G_CREDS")
+    if creds_json:
+        info = json.loads(creds_json)
+        return ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
+    # Если нет — берем из локального файла
+    return ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+
+creds = get_creds()
 client = gspread.authorize(creds)
 sheet_u = client.open("moviesbot_base").worksheet("users")
 
@@ -25,14 +37,15 @@ class Form(StatesGroup):
 def load_user_movies(user_id):
     try:
         all_r = sheet_u.get_all_records()
+        # Возвращаем (номер строки в таблице, данные фильма) для конкретного пользователя
         return [(i + 2, r) for i, r in enumerate(all_r) if str(r.get('user_id')) == str(user_id)]
-    except Exception:
+    except:
         return []
 
 def get_movie_list_text(user_id, page=1):
     user_movies = load_user_movies(user_id)
     if not user_movies:
-        return "🎬 Ваш личный список пуст."
+        return "🎬 Ваш личный список пуст. Просто напишите название фильма."
 
     items_per_page = 30
     start = (page - 1) * items_per_page
@@ -41,7 +54,7 @@ def get_movie_list_text(user_id, page=1):
     text = f"🎬 **МОЙ СПИСОК (Стр. {page}):**\n\n"
     for i, (row_idx, m) in enumerate(current, 1):
         v = m.get('series', '')
-        s_text = f" ({v})" if v else ""
+        s_text = f" ({v} )" if v else ""
         text += f"{i}. {m['name']}{s_text} — {m.get('status', '⏳')}\n"
 
     total = len(user_movies)
@@ -57,6 +70,7 @@ def get_main_keyboard(user_id, page=1):
     current = user_movies[start:start+items_per_page]
 
     for i, (row_idx, m) in enumerate(current, 1):
+        # row_idx — это реальный номер строки в Google Таблице
         builder.button(text=str(i), callback_data=f"select_{row_idx}_{page}")
     
     nav = []
@@ -70,6 +84,7 @@ def get_main_keyboard(user_id, page=1):
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
+    # ПРИВЕТСТВИЕ ОДИН В ОДИН ИЗ ТВОЕГО !botfiv.ру
     welcome_text = (
         "👋 Привет! Это твой личный трекер фильмов.\n\n"
         "**Значения статусов:**\n"
@@ -87,10 +102,12 @@ async def start_cmd(message: types.Message):
 @dp.callback_query(F.data.startswith("select_"))
 async def select_movie(call: types.CallbackQuery):
     row_idx, page = int(call.data.split("_")[1]), int(call.data.split("_")[2])
+    # Получаем данные напрямую из таблицы, чтобы кнопка управления знала имя фильма
     all_records = sheet_u.get_all_records()
     movie_data = all_records[row_idx - 2]
     
     builder = InlineKeyboardBuilder()
+    # ТВОИ КНОПКИ ИЗ !botfiv.ру
     for emo in ["✅", "▶️", "⏭️", "⏳", "➖"]:
         builder.button(text=emo, callback_data=f"set_{row_idx}_{emo}_{page}")
 
@@ -104,7 +121,7 @@ async def select_movie(call: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("set_"))
 async def set_status(call: types.CallbackQuery):
     _, row_idx, emo, page = call.data.split("_")
-    sheet_u.update_cell(int(row_idx), 3, emo)
+    sheet_u.update_cell(int(row_idx), 3, emo) # Колонка C (status)
     await call.message.edit_text(get_movie_list_text(call.from_user.id, int(page)),
                                  reply_markup=get_main_keyboard(call.from_user.id, int(page)))
 
@@ -118,7 +135,8 @@ async def delete_movie(call: types.CallbackQuery):
 @dp.message(F.text)
 async def add_movie(message: types.Message):
     if not message.text.startswith('/'):
-        sheet_u.append_row([str(message.from_user.id), message.text, "⏳", ""])
+        user_id = str(message.from_user.id)
+        sheet_u.append_row([user_id, message.text, "⏳", ""])
         await message.answer(get_movie_list_text(message.from_user.id, 1),
                              reply_markup=get_main_keyboard(message.from_user.id, 1))
 
