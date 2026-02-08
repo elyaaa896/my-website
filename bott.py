@@ -96,7 +96,7 @@ async def ask_text(call: types.CallbackQuery, state: FSMContext):
     _, idx, page = call.data.split("_")
     await state.update_data(row=int(idx) + 2, page=page)
     await state.set_state(Form.waiting_for_custom_text)
-    await call.message.answer("Введите текст:")
+    await call.message.answer("Введите время выхода:")
 
 @dp.message(Form.waiting_for_custom_text)
 async def update_text(message: types.Message, state: FSMContext):
@@ -117,13 +117,22 @@ async def delete_movie(call: types.CallbackQuery):
     sheet.delete_rows(int(idx) + 2)
     await call.message.edit_text(get_movie_list_text(int(page)), reply_markup=get_main_keyboard(int(page)))
 
-# ЭТА ФУНКЦИЯ БОЛЬШЕ НЕ СРАБОТАЕТ, ЕСЛИ МЫ ЖДЕМ СЕРИЮ ИЛИ ТЕКСТ
-@dp.message(F.text)
+# ФИКС: Добавляем фильтр для добавления новых фильмов
+@dp.message(F.text & ~F.text.startswith('/'))
 async def add_movie(message: types.Message, state: FSMContext):
+    # Проверяем, не находимся ли мы в состоянии ожидания ввода
     current_state = await state.get_state()
-    if current_state is None and not message.text.startswith('/'):
-        sheet.append_row([message.text, "⏳", "", ""])
-        await message.answer(get_movie_list_text(1), reply_markup=get_main_keyboard(1))
+    
+    # Если есть активное состояние (ожидание серии или текста), НЕ добавляем новый фильм
+    if current_state in [Form.waiting_for_series, Form.waiting_for_custom_text]:
+        return
+    
+    # Если нет активного состояния и это не команда - добавляем новый фильм
+    sheet.append_row([message.text, "⏳", "", ""])
+    await message.answer(get_movie_list_text(1), reply_markup=get_main_keyboard(1))
 
-async def main(): await dp.start_polling(bot)
-if __name__ == "__main__": asyncio.run(main())
+async def main(): 
+    await dp.start_polling(bot)
+
+if __name__ == "__main__": 
+    asyncio.run(main())
