@@ -1,4 +1,2 @@
 aiogram
-flask
-gspread
-oauth2client
+pandas
