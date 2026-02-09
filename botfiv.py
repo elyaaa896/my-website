@@ -31,7 +31,7 @@ def load_movies(user_id):
     path = get_user_file(user_id)
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
-            [span_12](start_span)return json.load(f)[span_12](end_span)
+            return json.load(f)
     return []
 
 def save_movies(user_id, data):
@@ -42,7 +42,7 @@ def save_movies(user_id, data):
 def get_movie_list_text(user_id, page=1):
     movies = load_movies(user_id)
     if not movies:
-        [span_13](start_span)return "🎬 Ваш личный список пуст. Просто напишите название фильма, чтобы добавить его."[span_13](end_span)
+       return "🎬 Ваш личный список пуст. Просто напишите название фильма, чтобы добавить его."
 
     items_per_page = 30
     start = (page - 1) * items_per_page
@@ -53,7 +53,7 @@ def get_movie_list_text(user_id, page=1):
     for i, m in enumerate(current_movies, start + 1):
         v = m.get('series', '')
         s_text = f" ({v} )" if v else ""
-        [span_14](start_span)text += f"{i}. {m['name']}{s_text} — {m.get('status', '⏳')}\n"[span_14](end_span)
+        text += f"{i}. {m['name']}{s_text} — {m.get('status', '⏳')}\n"
 
     total = len(movies)
     watched = sum(1 for m in movies if '✅' in str(m.get('status', '')))
@@ -96,7 +96,7 @@ async def start_cmd(message: types.Message):
 async def change_page(call: types.CallbackQuery):
     page = int(call.data.split("_")[1])
     await call.message.edit_text(get_movie_list_text(call.from_user.id, page),
-                                 [span_18](start_span)reply_markup=get_main_keyboard(call.from_user.id, page))[span_18](end_span)
+                                 reply_markup=get_main_keyboard(call.from_user.id, page))
 
 @dp.callback_query(F.data.startswith("select_"))
 async def select_movie(call: types.CallbackQuery):
@@ -116,7 +116,7 @@ async def select_movie(call: types.CallbackQuery):
 
 @dp.callback_query(F.data.startswith("set_"))
 async def set_status(call: types.CallbackQuery):
-    _[span_19](start_span), idx, emo, page = call.data.split("_")[span_19](end_span)
+    _, idx, emo, page = call.data.split("_")
     user_id = call.from_user.id
     movies = load_movies(user_id)
     movies[int(idx)]['status'] = emo
@@ -129,7 +129,7 @@ async def ask_custom(call: types.CallbackQuery, state: FSMContext):
     _, idx, page = call.data.split("_")
     await state.update_data(m_idx=int(idx), page=int(page))
     await state.set_state(Form.waiting_for_custom_status)
-    [span_20](start_span)await call.answer()[span_20](end_span)
+    await call.answer()
 
 @dp.message(Form.waiting_for_custom_status)
 async def process_custom(message: types.Message, state: FSMContext):
@@ -147,7 +147,7 @@ async def process_custom(message: types.Message, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("del_"))
 async def delete_movie(call: types.CallbackQuery):
-    _[span_21](start_span), idx, page = call.data.split("_")[span_21](end_span)
+    _, idx, page = call.data.split("_")
     user_id = call.from_user.id
     movies = load_movies(user_id)
     movies.pop(int(idx))
@@ -163,7 +163,7 @@ async def ask_series(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
 
 @dp.message(Form.waiting_for_series)
-[span_22](start_span)async def process_series(message: types.Message, state: FSMContext):[span_22](end_span)
+async def process_series(message: types.Message, state: FSMContext):
     data = await state.get_data()
     user_id = message.from_user.id
     movies = load_movies(user_id)
@@ -179,10 +179,10 @@ async def add_movie(message: types.Message):
     movies = load_movies(user_id)
     movies.append({"name": message.text, "status": "⏳", "series": ""})
     save_movies(user_id, movies)
-    [span_23](start_span)await message.answer(get_movie_list_text(user_id, 1), reply_markup=get_main_keyboard(user_id, 1))[span_23](end_span)
+    await message.answer(get_movie_list_text(user_id, 1), reply_markup=get_main_keyboard(user_id, 1))
 
 async def main():
-    [span_24](start_span)print("🚀 Бот запущен! Статусы обновлены.")[span_24](end_span)
+    print("🚀 Бот запущен! Статусы обновлены.")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
